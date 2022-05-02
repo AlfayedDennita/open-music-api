@@ -1,0 +1,89 @@
+const { goodResponse, badResponse } = require('../../utils/response');
+
+class AuthenticationsHandler {
+  constructor({
+    authenticationsService, usersService, tokenManager, validator,
+  }) {
+    this._authenticationsService = authenticationsService;
+    this._usersService = usersService;
+    this._tokenManager = tokenManager;
+    this._validator = validator;
+
+    this.postAuthenticationHandler = this.postAuthenticationHandler.bind(this);
+    this.putAuthenticationHandler = this.putAuthenticationHandler.bind(this);
+    this.deleteAuthenticationHandler = this.deleteAuthenticationHandler.bind(this);
+  }
+
+  async postAuthenticationHandler(request, h) {
+    let response;
+
+    try {
+      this._validator.validatePostAuthenticationPayload(request.payload);
+
+      const { username, password } = request.payload;
+      const id = await this._usersService.verifyUserCredential(username, password);
+
+      const accessToken = this._tokenManager.generateAccessToken({ id });
+      const refreshToken = this._tokenManager.generateRefreshToken({ id });
+
+      await this._authenticationsService.addRefreshToken(refreshToken);
+
+      response = goodResponse(h, 201, {
+        message: 'Autentikasi berhasil ditambahkan.',
+        data: { accessToken, refreshToken },
+      });
+    } catch (error) {
+      response = badResponse(h, error);
+    }
+
+    return response;
+  }
+
+  async putAuthenticationHandler(request, h) {
+    let response;
+
+    try {
+      this._validator.validatePutAuthenticationPayload(request.payload);
+
+      const { refreshToken } = request.payload;
+
+      await this._authenticationsService.verifyRefreshToken(refreshToken);
+
+      const { id } = this._tokenManager.verifyRefreshToken(refreshToken);
+      const accessToken = this._tokenManager.generateAccessToken({ id });
+
+      response = goodResponse(h, 200, {
+        message: 'Access token berhasil diperbarui.',
+        data: { accessToken },
+      });
+    } catch (error) {
+      response = badResponse(h, error);
+    }
+
+    return response;
+  }
+
+  async deleteAuthenticationHandler(request, h) {
+    let response;
+
+    try {
+      this._validator.validateDeleteAuthenticationPayload(request.payload);
+
+      const { refreshToken } = request.payload;
+
+      await this._authenticationsService.verifyRefreshToken(refreshToken);
+      this._tokenManager.verifyRefreshToken(refreshToken);
+      await this._authenticationsService.deleteRefreshToken(refreshToken);
+
+      response = goodResponse(h, 200, {
+        message: 'Refresh token berhasil dihapus.',
+      });
+    } catch (error) {
+      response = badResponse(h, error);
+    }
+
+    return response;
+  }
+}
+
+module.exports = AuthenticationsHandler;
